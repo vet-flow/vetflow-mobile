@@ -41,7 +41,7 @@
   const $ = (sel) => document.querySelector(sel);
   const loginScreen = $('#login-screen');
   const appScreen = $('#app-screen');
-  const loginForm = $('#login-form');
+  const loginForm = document.getElementById('login-form');
   const loginError = $('#login-error');
   const serverUrlInput = $('#server-url');
   const emailInput = $('#email');
@@ -72,7 +72,7 @@
   // ---------------------------------------------------------------------------
   // Login — email + hasło
   // ---------------------------------------------------------------------------
-  loginForm.addEventListener('submit', async (e) => {
+  loginForm?.addEventListener('submit', async (e) => {
     e.preventDefault();
     loginError.style.display = 'none';
     const serverUrl = serverUrlInput.value.trim().replace(/\/+$/, '');
