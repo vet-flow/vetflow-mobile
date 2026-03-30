@@ -1,5 +1,5 @@
 // Service Worker — VetFlow Mobile
-const CACHE = 'vetflow-mobile-v2';
+const CACHE = 'vetflow-mobile-v3';
 const STATIC_ASSETS = ['/', '/index.html', '/style.css', '/app.js', '/manifest.json'];
 
 // Install — pre-cache static assets
