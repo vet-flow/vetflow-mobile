@@ -2,30 +2,32 @@
 (function () {
   'use strict';
 
-  // ---------------------------------------------------------------------------
-  // Service Worker registration
-  // ---------------------------------------------------------------------------
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js');
   }
 
   // ---------------------------------------------------------------------------
-  // State helpers
+  // State
   // ---------------------------------------------------------------------------
   const store = {
     get serverUrl() { return localStorage.getItem('vf_server') || ''; },
     set serverUrl(v) { localStorage.setItem('vf_server', v.replace(/\/+$/, '')); },
-    get apiKey() { return localStorage.getItem('vf_apikey') || ''; },
-    set apiKey(v) { localStorage.setItem('vf_apikey', v); },
-    get clinicName() { return localStorage.getItem('vf_clinic') || ''; },
+    get token() { return localStorage.getItem('vf_token') || ''; },
+    set token(v) { localStorage.setItem('vf_token', v); },
+    get clinicName() { return localStorage.getItem('vf_clinic') || 'VetFlow'; },
     set clinicName(v) { localStorage.setItem('vf_clinic', v); },
-    clear() { localStorage.removeItem('vf_server'); localStorage.removeItem('vf_apikey'); localStorage.removeItem('vf_clinic'); },
-    get isLoggedIn() { return !!(this.serverUrl && this.apiKey); },
+    clear() {
+      ['vf_server','vf_token','vf_clinic'].forEach(k => localStorage.removeItem(k));
+    },
+    get isLoggedIn() { return !!(this.serverUrl && this.token); },
   };
 
   function api(path, opts = {}) {
     const url = store.serverUrl + path;
-    const headers = { 'X-Clinic-API-Key': store.apiKey, ...(opts.headers || {}) };
+    const headers = {
+      'Authorization': 'Bearer ' + store.token,
+      ...(opts.headers || {})
+    };
     if (opts.body && typeof opts.body === 'object') {
       headers['Content-Type'] = 'application/json';
       opts.body = JSON.stringify(opts.body);
@@ -42,7 +44,8 @@
   const loginForm = $('#login-form');
   const loginError = $('#login-error');
   const serverUrlInput = $('#server-url');
-  const apiKeyInput = $('#api-key');
+  const emailInput = $('#email');
+  const passwordInput = $('#password');
   const clinicNameEl = $('#clinic-name');
   const visitsContainer = $('#visits-container');
   const todayTitle = $('#today-title');
@@ -61,28 +64,40 @@
       btn.classList.add('active');
       const tab = document.getElementById(btn.dataset.tab);
       if (tab) tab.classList.add('active');
-
       if (btn.dataset.tab === 'tab-today') loadTodayVisits();
       if (btn.dataset.tab === 'tab-notifications') updatePushUI();
     });
   });
 
   // ---------------------------------------------------------------------------
-  // Login
+  // Login — email + hasło
   // ---------------------------------------------------------------------------
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     loginError.style.display = 'none';
     const serverUrl = serverUrlInput.value.trim().replace(/\/+$/, '');
-    const key = apiKeyInput.value.trim();
+    const email = emailInput ? emailInput.value.trim() : '';
+    const password = passwordInput ? passwordInput.value.trim() : '';
 
     store.serverUrl = serverUrl;
-    store.apiKey = key;
 
     try {
-      const res = await api('/api/clinic/push/vapid-public-key');
-      if (!res.ok) throw new Error('Nieprawidłowy serwer lub klucz API');
-      store.clinicName = 'VetFlow Clinic';
+      const res = await fetch(serverUrl + '/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Nieprawidłowy email lub hasło');
+      store.token = data.access_token;
+
+      // Pobierz nazwę kliniki
+      try {
+        const meRes = await api('/api/auth/me');
+        const me = await meRes.json();
+        store.clinicName = me.clinic_name || me.email || 'VetFlow';
+      } catch(_) {}
+
       showApp();
     } catch (err) {
       loginError.textContent = err.message || 'Błąd połączenia';
@@ -91,17 +106,16 @@
     }
   });
 
-  // Logout
   function logout() {
     store.clear();
     loginScreen.classList.remove('hidden');
     appScreen.classList.remove('active');
-    serverUrlInput.value = '';
-    apiKeyInput.value = '';
+    if (emailInput) emailInput.value = '';
+    if (passwordInput) passwordInput.value = '';
   }
 
-  $('#logout-btn').addEventListener('click', logout);
-  $('#settings-logout-btn').addEventListener('click', logout);
+  $('#logout-btn')?.addEventListener('click', logout);
+  $('#settings-logout-btn')?.addEventListener('click', logout);
 
   // ---------------------------------------------------------------------------
   // App init
@@ -109,70 +123,56 @@
   function showApp() {
     loginScreen.classList.add('hidden');
     appScreen.classList.add('active');
-    clinicNameEl.textContent = store.clinicName;
-    settingsServer.textContent = store.serverUrl;
-    settingsKey.textContent = store.apiKey.slice(0, 8) + '...';
+    if (clinicNameEl) clinicNameEl.textContent = store.clinicName;
+    if (settingsServer) settingsServer.textContent = store.serverUrl;
+    if (settingsKey) settingsKey.textContent = store.token.slice(0, 12) + '...';
     loadTodayVisits();
     updatePushUI();
   }
+
+  if (store.isLoggedIn) showApp();
 
   // ---------------------------------------------------------------------------
   // Today's visits
   // ---------------------------------------------------------------------------
   async function loadTodayVisits() {
-    visitsContainer.innerHTML = '<div class="loading-center"><div class="spinner"></div></div>';
-
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    todayTitle.textContent = `Wizyty — ${now.toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' })}`;
-
+    if (!visitsContainer) return;
+    visitsContainer.innerHTML = '<p style="color:#888;text-align:center;padding:20px">Ładowanie...</p>';
+    const today = new Date().toISOString().split('T')[0];
+    if (todayTitle) todayTitle.textContent = 'Dziś — ' + new Date().toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
     try {
-      const res = await api(`/api/clinic/visits?date=${dateStr}`);
+      const res = await api(`/api/clinic/visits?from=${today}&to=${today}&limit=50`);
       if (!res.ok) throw new Error('Błąd pobierania wizyt');
       const data = await res.json();
-      const visits = Array.isArray(data) ? data : (data.items || data.visits || []);
-
-      if (visits.length === 0) {
-        visitsContainer.innerHTML = `
-          <div class="empty-state">
-            <div class="icon">📋</div>
-            <p>Brak wizyt na dziś</p>
-          </div>`;
+      const visits = Array.isArray(data) ? data : (data.results || data.items || []);
+      if (!visits.length) {
+        visitsContainer.innerHTML = '<p style="color:#888;text-align:center;padding:40px">Brak wizyt na dziś 🐾</p>';
         return;
       }
-
-      visitsContainer.innerHTML = '<div class="visit-list">' + visits.map(v => {
-        const start = v.starts_at ? new Date(v.starts_at) : null;
-        const time = start ? start.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : '--:--';
-        const statusClass = {
-          pending: 'badge-pending', confirmed: 'badge-confirmed',
-          cancelled: 'badge-cancelled', declined: 'badge-cancelled',
-          completed: 'badge-completed', no_show: 'badge-cancelled',
-        }[v.status] || 'badge-pending';
-        const statusLabel = {
-          pending: 'oczekująca', confirmed: 'potwierdzona',
-          cancelled: 'anulowana', declined: 'odrzucona',
-          completed: 'zakończona', no_show: 'nie stawił się',
-        }[v.status] || v.status;
-
-        return `
-          <div class="visit-card">
-            <div class="time">${time}</div>
-            <div class="patient">${esc(v.pet_name || v.animal_name || '')}</div>
-            <div class="owner">${esc(v.owner_name || v.client_name || '')}</div>
-            ${v.service_type ? `<div class="service">${esc(v.service_type)}</div>` : ''}
-            <span class="badge ${statusClass}">${statusLabel}</span>
-          </div>`;
-      }).join('') + '</div>';
+      visitsContainer.innerHTML = visits.map(v => {
+        const time = v.visit_time || v.scheduled_at?.slice(11, 16) || '--:--';
+        const animal = v.animal_name || v.animal?.name || '?';
+        const owner = v.owner_name || v.client_name || '';
+        const doctor = v.doctor_name || '';
+        const status = v.status || '';
+        const statusBadge = {
+          'completed': 'background:#22c55e',
+          'cancelled': 'background:#ef4444',
+          'draft': 'background:#f59e0b',
+        }[status] || 'background:#6b7280';
+        return `<div style="background:#1e293b;border-radius:8px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px">
+          <div style="font-size:1.1rem;font-weight:700;color:#0d9488;min-width:48px">${time}</div>
+          <div style="flex:1">
+            <div style="font-weight:600;color:#f1f5f9">${animal}</div>
+            ${owner ? `<div style="font-size:0.82rem;color:#94a3b8">${owner}</div>` : ''}
+            ${doctor ? `<div style="font-size:0.8rem;color:#64748b">dr ${doctor}</div>` : ''}
+          </div>
+          <span style="font-size:0.7rem;padding:2px 8px;border-radius:12px;color:#fff;${statusBadge}">${status}</span>
+        </div>`;
+      }).join('');
     } catch (err) {
-      visitsContainer.innerHTML = `<div class="empty-state"><p>${esc(err.message)}</p></div>`;
+      visitsContainer.innerHTML = `<p style="color:#ef4444;text-align:center;padding:20px">${err.message}</p>`;
     }
-  }
-
-  function esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
   }
 
   // ---------------------------------------------------------------------------
@@ -187,100 +187,73 @@
       const data = await res.json();
       vapidPublicKey = data.public_key;
       return vapidPublicKey;
-    } catch { return null; }
+    } catch (_) { return null; }
   }
 
   function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-    const raw = atob(base64);
-    const arr = new Uint8Array(raw.length);
-    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
-    return arr;
-  }
-
-  async function getCurrentSubscription() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
-    const reg = await navigator.serviceWorker.ready;
-    return reg.pushManager.getSubscription();
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
   }
 
   async function updatePushUI() {
-    if (!('PushManager' in window)) {
-      pushStatusText.innerHTML = '<span class="status-indicator status-off"></span> Przeglądarka nie obsługuje powiadomień push';
+    if (!pushStatusText || !pushToggleBtn) return;
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+      pushStatusText.textContent = 'Powiadomienia push nie są obsługiwane w tej przeglądarce.';
       pushToggleBtn.style.display = 'none';
       return;
     }
-
     const perm = Notification.permission;
-    const sub = await getCurrentSubscription();
-
-    if (perm === 'denied') {
-      pushStatusText.innerHTML = '<span class="status-indicator status-off"></span> Powiadomienia zostały zablokowane w ustawieniach przeglądarki';
-      pushToggleBtn.style.display = 'none';
-    } else if (sub) {
-      pushStatusText.innerHTML = '<span class="status-indicator status-on"></span> Powiadomienia push aktywne';
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub && perm === 'granted') {
+      pushStatusText.textContent = 'Powiadomienia push są włączone ✅';
       pushToggleBtn.textContent = 'Wyłącz powiadomienia';
-      pushToggleBtn.className = 'btn btn-outline';
-      pushToggleBtn.style.display = '';
       pushToggleBtn.onclick = unsubscribePush;
     } else {
-      pushStatusText.innerHTML = '<span class="status-indicator status-off"></span> Powiadomienia push wyłączone';
+      pushStatusText.textContent = 'Powiadomienia push są wyłączone.';
       pushToggleBtn.textContent = 'Włącz powiadomienia';
-      pushToggleBtn.className = 'btn btn-primary';
-      pushToggleBtn.style.display = '';
       pushToggleBtn.onclick = subscribePush;
     }
   }
 
   async function subscribePush() {
-    pushToggleBtn.disabled = true;
     try {
       const key = await getVapidKey();
-      if (!key) throw new Error('Brak klucza VAPID');
-
+      if (!key) throw new Error('Brak klucza VAPID — skontaktuj się z administratorem.');
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(key),
       });
-
-      const subJson = sub.toJSON();
+      const subData = sub.toJSON();
       await api('/api/clinic/push/subscribe', {
         method: 'POST',
-        body: { endpoint: subJson.endpoint, keys: subJson.keys },
+        body: {
+          endpoint: subData.endpoint,
+          p256dh: subData.keys.p256dh,
+          auth: subData.keys.auth,
+          user_agent: navigator.userAgent.slice(0, 200),
+        },
       });
+      updatePushUI();
     } catch (err) {
-      console.error('Push subscribe error:', err);
+      alert('Błąd włączania powiadomień: ' + err.message);
     }
-    pushToggleBtn.disabled = false;
-    updatePushUI();
   }
 
   async function unsubscribePush() {
-    pushToggleBtn.disabled = true;
-    try {
-      const sub = await getCurrentSubscription();
-      if (sub) {
-        const subJson = sub.toJSON();
-        await api('/api/clinic/push/unsubscribe', {
-          method: 'DELETE',
-          body: { endpoint: subJson.endpoint, keys: subJson.keys },
-        });
-        await sub.unsubscribe();
-      }
-    } catch (err) {
-      console.error('Push unsubscribe error:', err);
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      await api('/api/clinic/push/unsubscribe', {
+        method: 'DELETE',
+        body: { endpoint: sub.endpoint },
+      });
+      await sub.unsubscribe();
     }
-    pushToggleBtn.disabled = false;
     updatePushUI();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Boot
-  // ---------------------------------------------------------------------------
-  if (store.isLoggedIn) {
-    showApp();
   }
 
 })();

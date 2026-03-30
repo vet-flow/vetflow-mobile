@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>VetFlow Mobile</title>
   <link rel="manifest" href="/manifest.json">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <meta name="theme-color" content="#0d9488">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,8 +18,9 @@
   <div id="login-screen">
     <div class="logo">Vet<span>Flow</span></div>
     <form id="login-form">
-      <input type="url" id="server-url" placeholder="URL serwera (np. https://vetflow.gruzalab.pl)" required>
-      <input type="text" id="api-key" placeholder="Klucz API kliniki" required>
+      <input type="url" id="server-url" placeholder="https://vet-flow.pl" value="https://vet-flow.pl" required>
+      <input type="email" id="email" placeholder="Email (np. kontakt@klinika.pl)" required autocomplete="email">
+      <input type="password" id="password" placeholder="Hasło" required autocomplete="current-password">
       <button type="submit" class="btn btn-primary">Połącz</button>
       <p id="login-error" style="color:var(--danger);font-size:0.85rem;text-align:center;display:none;"></p>
     </form>
@@ -92,6 +94,6 @@
     </nav>
   </div>
 
-  <script src="/app.js"></script>
+  <script src="/app.js?v=3"></script>
 </body>
 </html>
