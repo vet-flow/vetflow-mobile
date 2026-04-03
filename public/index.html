@@ -18,10 +18,10 @@
   <div id="login-screen">
     <div class="logo">Vet<span>Flow</span></div>
     <form id="login-form">
-      <input type="text" id="server-url" placeholder="https://vet-flow.pl" value="https://vet-flow.pl" required>
-      <input type="email" id="email" placeholder="Email (np. kontakt@klinika.pl)" required autocomplete="email">
+      <input type="text" id="server-url" placeholder="https://vet-flow.pl" value="https://vet-flow.pl">
+      <input type="text" id="email" inputmode="email" placeholder="Email (np. kontakt@klinika.pl)" required autocomplete="email">
       <input type="password" id="password" placeholder="Hasło" required autocomplete="current-password">
-      <button type="submit" class="btn btn-primary">Połącz</button>
+      <button type="button" class="btn btn-primary" id="login-btn" onclick="doLogin()">Połącz</button>
       <p id="login-error" style="color:var(--danger);font-size:0.85rem;text-align:center;display:none;"></p>
     </form>
   </div>
@@ -41,6 +41,32 @@
       <div class="tab-content active" id="tab-today">
         <div class="section-title" id="today-title">Wizyty dziś</div>
         <div id="visits-container">
+          <div class="loading-center"><div class="spinner"></div></div>
+        </div>
+      </div>
+
+      <!-- Tab: Klienci -->
+      <div class="tab-content" id="tab-clients">
+        <div class="section-title">Klienci</div>
+        <div style="padding:0 4px;margin-bottom:12px;">
+          <input type="text" id="client-search" placeholder="Szukaj klienta..." class="search-input" oninput="searchClients()">
+        </div>
+        <div id="clients-container"><p style="text-align:center;color:#888;padding:20px">Wpisz imię, nazwisko lub telefon</p></div>
+      </div>
+
+      <!-- Tab: Zwierzęta -->
+      <div class="tab-content" id="tab-animals">
+        <div class="section-title">Zwierzęta</div>
+        <div style="padding:0 4px;margin-bottom:12px;">
+          <input type="text" id="animal-search" placeholder="Szukaj zwierzęcia..." class="search-input" oninput="searchAnimals()">
+        </div>
+        <div id="animals-container"><p style="text-align:center;color:#888;padding:20px">Wpisz imię zwierzęcia lub chip</p></div>
+      </div>
+
+      <!-- Tab: Rezerwacje -->
+      <div class="tab-content" id="tab-bookings">
+        <div class="section-title">Nowe rezerwacje</div>
+        <div id="bookings-container">
           <div class="loading-center"><div class="spinner"></div></div>
         </div>
       </div>
@@ -83,17 +109,25 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Dziś
       </button>
-      <button class="nav-item" data-tab="tab-notifications">
+      <button class="nav-item" data-tab="tab-clients">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Klienci
+      </button>
+      <button class="nav-item" data-tab="tab-animals">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="4" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="20" cy="16" r="2"/><circle cx="4" cy="8" r="2"/><circle cx="2" cy="16" r="2"/><path d="M7 18c.6-2.4 2.1-4 5-4s4.4 1.6 5 4"/></svg>
+        Zwierzęta
+      </button>
+      <button class="nav-item" data-tab="tab-bookings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        Powiadomienia
+        <span style="position:relative;">Rezerwacje<span id="booking-badge" style="display:none;position:absolute;top:-8px;right:-10px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;font-size:0.6rem;line-height:16px;text-align:center;"></span></span>
       </button>
       <button class="nav-item" data-tab="tab-settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.32 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Ustawienia
+        Więcej
       </button>
     </nav>
   </div>
 
-  <script src="/app.js?v=5"></script>
+  <script src="/app.js?v=11"></script>
 </body>
 </html>
